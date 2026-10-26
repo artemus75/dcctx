@@ -93,8 +93,8 @@ func TestDiscoverRootIsProject(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	ps := []project{
-		{"web", "/x/web"}, {"web-api", "/x/web-api"}, {"db", "/x/db"},
-		{"app", "/one/app"}, {"app", "/two/app"},
+		{"web", "/x/web", "", ""}, {"web-api", "/x/web-api", "", ""}, {"db", "/x/db", "", ""},
+		{"app", "/one/app", "", ""}, {"app", "/two/app", "", ""},
 	}
 	cases := []struct {
 		q       string
@@ -135,7 +135,7 @@ func TestResolvePath(t *testing.T) {
 }
 
 func TestCompletionNames(t *testing.T) {
-	ps := []project{{"app", "/one/app"}, {"app", "/two/app"}, {"db", "/x/db"}}
+	ps := []project{{"app", "/one/app", "", ""}, {"app", "/two/app", "", ""}, {"db", "/x/db", "", ""}}
 	got := completionNames(ps)
 	want := []string{"db", "one/app", "two/app"}
 	if !reflect.DeepEqual(got, want) {
@@ -204,4 +204,21 @@ func TestCompletionShells(t *testing.T) {
 	if err := printCompletion("csh"); err == nil {
 		t.Error("csh should be rejected")
 	}
+}
+
+func TestExternalProfileMapping(t *testing.T) {
+ root:=t.TempDir()
+ projectDir:=filepath.Join(root,"azure-engineering")
+ profileDir:=filepath.Join(root,"central",".devcontainer","azure")
+ if err:=os.MkdirAll(projectDir,0755);err!=nil{t.Fatal(err)}
+ if err:=os.MkdirAll(profileDir,0755);err!=nil{t.Fatal(err)}
+ profile:=filepath.Join(profileDir,"devcontainer.json")
+ if err:=os.WriteFile(profile,[]byte("{}"),0644);err!=nil{t.Fatal(err)}
+ c:=&config{profilesFile:filepath.Join(root,"profiles"),rootsFile:filepath.Join(root,"roots")}
+ if err:=c.mapProfile(projectDir,profile,"/workspaces/projects/azure-engineering");err!=nil{t.Fatal(err)}
+ p,err:=c.resolveProject(projectDir);if err!=nil{t.Fatal(err)}
+ if p.Profile!=profile||p.Workdir!="/workspaces/projects/azure-engineering"{t.Fatalf("bad mapping: %+v",p)}
+ if !reflect.DeepEqual(profileArgs(p),[]string{"--config",profile}){t.Fatalf("bad CLI args: %v",profileArgs(p))}
+ if err:=c.mapProfile(projectDir,profile,p.Workdir);err!=nil{t.Fatal(err)}
+ if len(c.mapped())!=1{t.Fatalf("mapping duplicated: %v",c.mapped())}
 }
