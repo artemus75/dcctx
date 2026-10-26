@@ -28,13 +28,16 @@ const maxDepth = 4 // maximum search depth below a search folder
 var errCancelled = errors.New("cancelled")
 
 type project struct {
-	Name string
-	Path string
+	Name    string
+	Path    string
+	Profile string
+	Workdir string
 }
 
 type config struct {
-	rootsFile string // one search folder per line
-	stateFile string // line 1: current project, line 2: previous project
+	rootsFile    string // one search folder per line
+	stateFile    string // line 1: current project, line 2: previous project
+	profilesFile string
 }
 
 func main() {
@@ -64,7 +67,7 @@ func run(args []string) error {
 	case "-l", "--list":
 		return c.cmdList()
 	case "--names":
-		for _, n := range completionNames(discover(c.readRoots(), maxDepth)) {
+		for _, n := range completionNames(c.projects()) {
 			fmt.Println(n)
 		}
 		return nil
@@ -73,6 +76,11 @@ func run(args []string) error {
 			fmt.Println(r)
 		}
 		return nil
+	case "--map-profile":
+		if len(args) != 4 {
+			return errors.New("usage: dcctx --map-profile <project> <devcontainer.json> <container-workdir>")
+		}
+		return c.mapProfile(args[1], args[2], args[3])
 	case "--add-root":
 		if len(args) < 2 {
 			return errors.New("missing path: dcctx --add-root <path>")
@@ -112,6 +120,8 @@ func usage() {
   dcctx -l                  list projects (● running, ○ stopped, ? unknown, * current)
   dcctx -r [name]           rebuild the container (default: current project)
   dcctx --add-root <path>   add a search folder
+  dcctx --map-profile <project> <config> <container-workdir>
+                             use a central profile for a project
   dcctx --roots             show search folders
   dcctx --completion [sh]   print shell completion: bash (default), zsh, fish
   dcctx --version
@@ -138,8 +148,9 @@ func loadConfig() (*config, error) {
 		return nil, err
 	}
 	return &config{
-		rootsFile: filepath.Join(dir, "roots"),
-		stateFile: filepath.Join(dir, "state"),
+		rootsFile:    filepath.Join(dir, "roots"),
+		stateFile:    filepath.Join(dir, "state"),
+		profilesFile: filepath.Join(dir, "profiles"),
 	}, nil
 }
 
@@ -222,6 +233,113 @@ func (c *config) writeState(newCur string) error {
 		return err
 	}
 	return os.Rename(tmp, c.stateFile)
+}
+
+func (c *config) mapped() []project {
+	b, err := os.ReadFile(c.profilesFile)
+	if err != nil {
+		return nil
+	}
+	var out []project
+	for _, line := range strings.Split(string(b), "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) != 3 {
+			continue
+		}
+		out = append(out, project{Name: filepath.Base(fields[0]), Path: fields[0], Profile: fields[1], Workdir: fields[2]})
+	}
+	return out
+}
+func (c *config) mapProfile(path, profile, workdir string) error {
+	p, err := filepath.Abs(expandHome(path))
+	if err != nil {
+		return err
+	}
+	f, err := filepath.Abs(expandHome(profile))
+	if err != nil {
+		return err
+	}
+	if st, e := os.Stat(p); e != nil || !st.IsDir() {
+		return fmt.Errorf("missing project directory: %s", p)
+	}
+	if st, e := os.Stat(f); e != nil || st.IsDir() || filepath.Base(f) != "devcontainer.json" {
+		return fmt.Errorf("missing devcontainer.json: %s", f)
+	}
+	if !filepath.IsAbs(workdir) {
+		return errors.New("container workdir must be absolute")
+	}
+	for _, v := range []string{p, f, workdir} {
+		if strings.ContainsAny(v, "\t\r\n") {
+			return errors.New("tabs/newlines are not allowed in paths")
+		}
+	}
+	ps := c.mapped()
+	found := false
+	for i := range ps {
+		if ps[i].Path == p {
+			ps[i].Profile = f
+			ps[i].Workdir = workdir
+			found = true
+		}
+	}
+	if !found {
+		ps = append(ps, project{Name: filepath.Base(p), Path: p, Profile: f, Workdir: workdir})
+	}
+	var lines []string
+	for _, v := range ps {
+		lines = append(lines, strings.Join([]string{v.Path, v.Profile, v.Workdir}, "\t"))
+	}
+	if err := os.WriteFile(c.profilesFile, []byte(strings.Join(lines, "\n")+"\n"), 0600); err != nil {
+		return err
+	}
+	fmt.Printf("Mapped %s to %s\n", p, f)
+	return nil
+}
+func (c *config) projects() []project {
+	ps := discover(c.readRoots(), maxDepth)
+	index := map[string]int{}
+	for i, p := range ps {
+		index[p.Path] = i
+	}
+	for _, p := range c.mapped() {
+		if st, e := os.Stat(p.Path); e != nil || !st.IsDir() {
+			continue
+		}
+		if i, ok := index[p.Path]; ok {
+			ps[i] = p
+		} else {
+			index[p.Path] = len(ps)
+			ps = append(ps, p)
+		}
+	}
+	sort.Slice(ps, func(i, j int) bool {
+		if ps[i].Name != ps[j].Name {
+			return ps[i].Name < ps[j].Name
+		}
+		return ps[i].Path < ps[j].Path
+	})
+	return ps
+}
+func (c *config) resolveProject(q string) (project, error) {
+	ps := c.projects()
+	if looksLikePath(q) {
+		p, e := filepath.Abs(expandHome(q))
+		if e != nil {
+			return project{}, e
+		}
+		for _, v := range ps {
+			if v.Path == p {
+				return v, nil
+			}
+		}
+	}
+	return resolve(q, ps)
+}
+func profileArgs(p project) []string {
+	if p.Profile == "" {
+		return nil
+	}
+	return []string{"--config", p.Profile}
 }
 
 // ---------------------------------------------------------------- discovery
@@ -450,7 +568,7 @@ func pick(ps []project, running map[string]bool, known bool) (project, error) {
 // ---------------------------------------------------------------- commands
 
 func (c *config) cmdPick() error {
-	ps := discover(c.readRoots(), maxDepth)
+	ps := c.projects()
 	running, known := runningFolders()
 	p, err := pick(ps, running, known)
 	if err != nil {
@@ -460,7 +578,7 @@ func (c *config) cmdPick() error {
 }
 
 func (c *config) cmdOpen(query string, args []string) error {
-	p, err := resolve(query, discover(c.readRoots(), maxDepth))
+	p, err := c.resolveProject(query)
 	if err != nil {
 		return err
 	}
@@ -475,14 +593,18 @@ func (c *config) cmdPrev() error {
 	if fi, err := os.Stat(prev); err != nil || !fi.IsDir() {
 		return fmt.Errorf("previous project no longer exists: %s", prev)
 	}
-	return c.enter(project{Name: filepath.Base(prev), Path: prev}, nil)
+	p, err := c.resolveProject(prev)
+	if err != nil {
+		return err
+	}
+	return c.enter(p, nil)
 }
 
 func (c *config) cmdRebuild(args []string) error {
 	var p project
 	if len(args) > 0 {
 		var err error
-		if p, err = resolve(args[0], discover(c.readRoots(), maxDepth)); err != nil {
+		if p, err = c.resolveProject(args[0]); err != nil {
 			return err
 		}
 	} else {
@@ -490,7 +612,11 @@ func (c *config) cmdRebuild(args []string) error {
 		if cur == "" {
 			return errors.New("no current project – pass a name: dcctx -r <name>")
 		}
-		p = project{Name: filepath.Base(cur), Path: cur}
+		var err error
+		p, err = c.resolveProject(cur)
+		if err != nil {
+			return err
+		}
 	}
 	dc, err := devcontainerBin()
 	if err != nil {
@@ -501,7 +627,7 @@ func (c *config) cmdRebuild(args []string) error {
 	}
 	fmt.Fprintf(os.Stderr, "↻ Rebuild: %s\n", p.Name)
 	rbArgs := append([]string{"up"}, engineArgs()...)
-	cmd := exec.Command(dc, append(rbArgs, "--workspace-folder", p.Path, "--remove-existing-container")...)
+	cmd := exec.Command(dc, append(append(rbArgs, "--workspace-folder", p.Path), append(profileArgs(p), "--remove-existing-container")...)...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("devcontainer up failed: %w", err)
@@ -510,7 +636,7 @@ func (c *config) cmdRebuild(args []string) error {
 }
 
 func (c *config) cmdList() error {
-	ps := discover(c.readRoots(), maxDepth)
+	ps := c.projects()
 	if len(ps) == 0 {
 		fmt.Fprintln(os.Stderr, "No projects found. Search folders: dcctx --roots, add one: dcctx --add-root <path>")
 		return nil
@@ -586,7 +712,7 @@ func (c *config) enter(p project, args []string) error {
 	}
 	fmt.Fprintf(os.Stderr, "→ %s\n", p.Name)
 	upArgs := append([]string{"up"}, engineArgs()...)
-	up := exec.Command(dc, append(upArgs, "--workspace-folder", p.Path)...)
+	up := exec.Command(dc, append(append(upArgs, "--workspace-folder", p.Path), profileArgs(p)...)...)
 	up.Stderr = os.Stderr // stdout (the JSON result) is discarded
 	if err := up.Run(); err != nil {
 		return fmt.Errorf("devcontainer up failed: %w", err)
@@ -604,6 +730,10 @@ func (c *config) enter(p project, args []string) error {
 	argv := []string{"devcontainer", "exec"}
 	argv = append(argv, engineArgs()...)
 	argv = append(argv, "--workspace-folder", p.Path)
+	argv = append(argv, profileArgs(p)...)
+	if p.Workdir != "" {
+		argv = append(argv, "sh", "-c", "cd \"$1\" && shift && exec \"$@\"", "dcctx", p.Workdir)
+	}
 	argv = append(argv, args...)
 	return execReplace(dc, argv)
 }

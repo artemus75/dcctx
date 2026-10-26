@@ -77,6 +77,33 @@ Names can be abbreviated when unambiguous. For duplicate names use `folder/name`
 - **Running state:** one `docker ps` call filtered on the `devcontainer.local_folder` label. If Docker is unreachable, state shows as `?`.
 - **State:** `~/.config/dcctx/roots` (search folders) and `~/.config/dcctx/state` (current and previous project). `XDG_CONFIG_HOME` is respected.
 
+## Central dev container profiles (experimental)
+
+A project can use a dev container configuration stored outside its repository.
+Existing local `.devcontainer` projects remain supported.
+
+For the AEL Azure profile, assuming the repositories live at `~/Projects` and
+`~/git/engineering-devcontainers`:
+
+```sh
+export AEL_WORKSPACE_ROOT="$HOME/Projects"
+dcctx --map-profile "$HOME/Projects/azure-engineering" \
+  "$HOME/git/engineering-devcontainers/.devcontainer/azure/devcontainer.json" \
+  "/workspaces/projects/azure-engineering"
+dcctx azure-engineering
+```
+
+Mappings are stored locally in `~/.config/dcctx/profiles` (or `$XDG_CONFIG_HOME/dcctx/profiles`).
+The third argument specifies the **existing** directory inside the container where
+the shell or requested command should run. The external configuration must itself
+mount that directory; dcctx does not add mounts. The AEL Azure profile uses
+`AEL_WORKSPACE_ROOT` for the host bind mount, so the environment variable must
+be available when invoking dcctx.
+
+The profile is passed to the official Dev Container CLI with `--config` while
+the selected project remains the `--workspace-folder`. Use `dcctx -r azure-engineering`
+to rebuild. This feature requires validation with a real Docker/VS Code installation.
+
 ## Limitations
 
 - Ambiguous names are rejected with a list of candidates; use `folder/name` to pick one.
