@@ -538,6 +538,7 @@ func (c *config) cmdRebuild(args []string) error {
 		if cur == "" {
 			return errors.New("no current project – pass a name: dcctx -r <name>")
 		}
+		var err error
 		p,err=c.resolveProject(cur);if err!=nil{return err}
 	}
 	dc, err := devcontainerBin()
