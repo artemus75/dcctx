@@ -129,5 +129,19 @@ else
   echo "SKIP  zsh not installed"
 fi
 
+# External profile integration: no local devcontainer configuration
+mkdir -p "$T/external-project" "$T/profiles"
+echo '{}' > "$T/profiles/devcontainer.json"
+out=$("$BIN" --map-profile "$T/external-project" "$T/profiles/devcontainer.json" "/workspaces/projects/external-project" 2>&1)
+check "external profile: mapping registered" "$out" "Mapped"
+out=$("$BIN" -l 2>&1)
+check "external profile: listed" "$out" "external-project"
+cp "$MINBIN/devcontainer" "$FAKEBIN/devcontainer"
+: > "$FAKE_LOG"
+out=$("$BIN" external-project 2>&1)
+check "external profile: up uses config" "$(cat "$FAKE_LOG")" "--config $T/profiles/devcontainer.json"
+check "external profile: exec uses config" "$out" "--config $T/profiles/devcontainer.json"
+check "external profile: working directory" "$out" "/workspaces/projects/external-project"
+
 echo; echo "Result: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

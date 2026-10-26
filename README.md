@@ -35,7 +35,7 @@ If you have only a handful of projects, a shell alias around `devcontainer up/ex
 
 ## Install
 
-Download a binary from the [releases page](https://github.com/OWNER/dcctx/releases), verify it against `SHA256SUMS`, and put it on your `PATH`:
+Download a binary from the [releases page](https://github.com/artemus75/dcctx/releases), verify it against `SHA256SUMS`, and put it on your `PATH`:
 
 ```bash
 install dcctx-linux-amd64 ~/.local/bin/dcctx     # macOS: dcctx-darwin-arm64 / -amd64
@@ -44,7 +44,7 @@ install dcctx-linux-amd64 ~/.local/bin/dcctx     # macOS: dcctx-darwin-arm64 / -
 Or build from source (Go 1.24+):
 
 ```bash
-git clone https://github.com/OWNER/dcctx && cd dcctx
+git clone https://github.com/artemus75/dcctx && cd dcctx
 go build -o dcctx . && install dcctx ~/.local/bin/
 ```
 
@@ -67,6 +67,7 @@ echo 'eval "$(dcctx --completion)"' >> ~/.bashrc    # zsh / fish: dcctx --comple
 | `dcctx -l` | list projects: `●` running, `○` stopped, `?` unknown, `*` current |
 | `dcctx -r [name]` | rebuild the container (default: current project) |
 | `dcctx --add-root <path>` / `--roots` | manage search folders |
+| `dcctx --map-profile <project> <config> <workdir>` | map an external profile to a project |
 | `dcctx --completion [bash\|zsh\|fish]` | print shell completion |
 
 Names can be abbreviated when unambiguous. For duplicate names use `folder/name`. The shell inside the container is `bash`; override with `DCCTX_SHELL=zsh`.
@@ -77,17 +78,16 @@ Names can be abbreviated when unambiguous. For duplicate names use `folder/name`
 - **Running state:** one `docker ps` call filtered on the `devcontainer.local_folder` label. If Docker is unreachable, state shows as `?`.
 - **State:** `~/.config/dcctx/roots` (search folders) and `~/.config/dcctx/state` (current and previous project). `XDG_CONFIG_HOME` is respected.
 
-## Central dev container profiles (experimental)
+## Central dev container profiles
 
 A project can use a dev container configuration stored outside its repository.
 Existing local `.devcontainer` projects remain supported.
 
-For the AEL Azure profile, assuming the repositories live at `~/Projects` and
-`~/git/engineering-devcontainers`:
+Example using a centrally managed Azure profile (adjust the paths to your own checkout):
 
 ```sh
-export AEL_WORKSPACE_ROOT="$HOME/Projects"
-dcctx --map-profile "$HOME/Projects/azure-engineering" \
+export AEL_WORKSPACE_ROOT="$HOME/projects"
+dcctx --map-profile "$HOME/projects/azure-engineering" \
   "$HOME/git/engineering-devcontainers/.devcontainer/azure/devcontainer.json" \
   "/workspaces/projects/azure-engineering"
 dcctx azure-engineering
@@ -102,7 +102,7 @@ be available when invoking dcctx.
 
 The profile is passed to the official Dev Container CLI with `--config` while
 the selected project remains the `--workspace-folder`. Use `dcctx -r azure-engineering`
-to rebuild. This feature requires validation with a real Docker/VS Code installation.
+to rebuild. Validated on Linux with Podman and Dev Containers CLI 0.89.0. Docker, VS Code integration and other platforms have not yet been validated.
 
 ## Limitations
 
@@ -120,15 +120,8 @@ go build -o dcctx . && BIN=./dcctx bash test/integration.sh
 
 Releases are built by GitHub Actions when you push a tag like `v0.1.0`.
 
-The module path in `go.mod` and the links in this README use the placeholder `OWNER`. Replace it with your GitHub user or organisation before publishing:
-
-```bash
-grep -rl OWNER . --exclude-dir=.git | xargs sed -i 's/OWNER/your-github-name/g'
-```
-
-After that, `go install github.com/your-github-name/dcctx@latest` works as well.
+After the first public release, install using `go install github.com/artemus75/dcctx@latest`.
 
 ## License
 
 MIT
-# dcctx
