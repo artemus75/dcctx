@@ -1,0 +1,9 @@
+# build output
+/dcctx
+/dcctx.exe
+/dist/
+
+# editor / OS
+.idea/
+.vscode/
+.DS_Store
