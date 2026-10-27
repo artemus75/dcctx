@@ -30,9 +30,18 @@ jobs:
       - name: Verify tag matches main
         env:
           RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor HEAD origin/main || { echo "Tag not reachable from main"; exit 1; }
+          # Use the authenticated GitHub API instead of a credential-less git fetch.
+          # Confirm the tag commit is an ancestor of main (including equality).
+          # This permits subsequent workflow-fix commits without moving the release tag.
+          TAG_SHA=$(git rev-parse HEAD)
+          MAIN_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')
+          STATUS=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${TAG_SHA}...${MAIN_SHA}" --jq '.status')
+          case "$STATUS" in
+            ahead|identical) echo "Tag $RELEASE_TAG is reachable from main" ;;
+            *) echo "Tag $RELEASE_TAG is not an ancestor of main (status: $STATUS)"; exit 1 ;;
+          esac
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
