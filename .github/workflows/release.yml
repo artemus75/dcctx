@@ -33,10 +33,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Use the authenticated GitHub API instead of a credential-less git fetch.
-          # Require the tagged commit to match the reviewed main HEAD exactly.
-          MAIN_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')
+          # Confirm the tag commit is an ancestor of main (including equality).
+          # This permits subsequent workflow-fix commits without moving the release tag.
           TAG_SHA=$(git rev-parse HEAD)
-          test "$TAG_SHA" = "$MAIN_SHA" || { echo "Tag $RELEASE_TAG ($TAG_SHA) does not match main ($MAIN_SHA)"; exit 1; }
+          MAIN_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')
+          STATUS=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${TAG_SHA}...${MAIN_SHA}" --jq '.status')
+          case "$STATUS" in
+            ahead|identical) echo "Tag $RELEASE_TAG is reachable from main" ;;
+            *) echo "Tag $RELEASE_TAG is not an ancestor of main (status: $STATUS)"; exit 1 ;;
+          esac
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
