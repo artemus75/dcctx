@@ -80,6 +80,11 @@ Names can be abbreviated when unambiguous. For duplicate names use `folder/name`
 
 ## Central dev container profiles
 
+![Local versus centrally managed Dev Container profiles with dcctx](docs/assets/dcctx-devcontainer-workflow.svg)
+
+The diagram illustrates explicit profile mapping and the shared execution flow. Container workspace mounts are defined by the selected Dev Container configuration, not by dcctx.
+
+
 A project can use a dev container configuration stored outside its repository.
 Existing local `.devcontainer` projects remain supported.
 
