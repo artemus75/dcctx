@@ -30,9 +30,13 @@ jobs:
       - name: Verify tag matches main
         env:
           RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor HEAD origin/main || { echo "Tag not reachable from main"; exit 1; }
+          # Use the authenticated GitHub API instead of a credential-less git fetch.
+          # Require the tagged commit to match the reviewed main HEAD exactly.
+          MAIN_SHA=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')
+          TAG_SHA=$(git rev-parse HEAD)
+          test "$TAG_SHA" = "$MAIN_SHA" || { echo "Tag $RELEASE_TAG ($TAG_SHA) does not match main ($MAIN_SHA)"; exit 1; }
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
