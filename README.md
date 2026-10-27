@@ -80,9 +80,9 @@ Names can be abbreviated when unambiguous. For duplicate names use `folder/name`
 
 ## Central dev container profiles
 
-![Local versus centrally managed Dev Container profiles with dcctx](docs/assets/dcctx-devcontainer-workflow.svg)
+![dcctx architecture and workflow: project discovery, configuration resolution, and container execution](docs/assets/dcctx-architecture-workflow-approved.png)
 
-The diagram illustrates explicit profile mapping and the shared execution flow. Container workspace mounts are defined by the selected Dev Container configuration, not by dcctx.
+The diagram shows how dcctx discovers projects, resolves local configurations or explicitly registered external profiles, and invokes the Dev Container CLI using Docker or Podman. Container workspace mounts are defined by the selected Dev Container configuration, not by dcctx.
 
 
 A project can use a dev container configuration stored outside its repository.
